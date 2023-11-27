@@ -8,6 +8,8 @@ using UnityEditor;
 
 public class Trap : MonoBehaviour
 {
+    public static Color overrideColor;
+
     public int damage = 10;
 
     [Range(1, 20)]
@@ -15,16 +17,26 @@ public class Trap : MonoBehaviour
 
     public static List<Spawner> spawners = new List<Spawner>();
 
+    public TestChildClass testClass;
+
     private void Start()
     {
 
+    }
+
+    public static void OverrideColors()
+    {
+        for (int i = 0; i < spawners.Count; i++)
+        {
+            spawners[i].ApplyColour(overrideColor);
+        }
     }
 
 #if UNITY_EDITOR
     private void OnDrawGizmos()
     {
         Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
-        
+
 
         foreach (var spawner in spawners)
         {
@@ -54,3 +66,17 @@ public class Trap : MonoBehaviour
 
     }
 }
+
+[System.Serializable]
+public class TestClass : ScriptableObject
+{
+    public Vector3 pos;
+    public Color col;
+}
+
+[System.Serializable]
+public class TestChildClass : TestClass
+{
+    public int i;
+}
+
