@@ -28,6 +28,16 @@ public class Spline_Inspector : Editor
     {
         spline = target as Spline;
 
+        EditorGUI.BeginChangeCheck();
+        bool loop = EditorGUILayout.Toggle("Loop", spline.Loop);
+        if (EditorGUI.EndChangeCheck())
+        {
+            Undo.RecordObject(spline, "Toggle loop");
+            spline.Loop = loop;
+            SceneView.RepaintAll();
+        }
+
+
         if (selectedIndex >= 0 && selectedIndex < spline.ControlPointCount)
         {
             DrawPointInInspector();
@@ -36,8 +46,8 @@ public class Spline_Inspector : Editor
         if (GUILayout.Button("Add Curve"))
         {
             Undo.RecordObject(spline, "Add Curve");
-            spline.AddCurve();
             //EditorUtility.SetDirty(spline);
+            spline.AddCurve();
         }
     }
 
@@ -69,9 +79,15 @@ public class Spline_Inspector : Editor
     private Vector3 DrawPoint(int index)
     {
         Vector3 point = handleTransform.TransformPoint(spline.GetControlPoint(index));
+        float size = HandleUtility.GetHandleSize(point);
+
+        if (index == 0)
+        {
+            size *= 2;
+        }
 
         Handles.color = modeColors[(int)spline.GetControlPointMode(index)];
-        if (Handles.Button(point, handleRotation, handleSize, pickSize, Handles.DotHandleCap))
+        if (Handles.Button(point, handleRotation, size * handleSize, size * pickSize, Handles.DotHandleCap))
         {
             selectedIndex = index;
             Repaint();
