@@ -22,4 +22,14 @@ public static class ExtensionMethods
     {
         return Mathf.Round(v / size) * size;
     }
+
+    public static float AtLeast(this float v, float min)
+    {
+        return Mathf.Max(v, min);
+    }
+
+    public static int AtLeast(this int v, int min)
+    {
+        return Mathf.Max(v, min);
+    }
 }

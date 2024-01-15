@@ -50,7 +50,6 @@ public class GridTool : EditorWindow
         EditorPrefs.SetInt("snapper_tool_gridType", (int)gridType);
         EditorPrefs.SetInt("snapper_tool_gridSize", gridSize);
         EditorPrefs.SetInt("snapper_tool_angularDivisions", angularDivisions);
-
     }
 
     private void OnGUI()
