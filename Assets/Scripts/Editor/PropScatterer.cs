@@ -2,6 +2,8 @@ using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
 using UnityEditor;
+using System.Linq;
+
 
 
 public class PropScatterer : EditorWindow
@@ -12,13 +14,19 @@ public class PropScatterer : EditorWindow
     public float radius = 2f;
     public int spawnCount = 8;
     public GameObject spawnPrefab = null;
+    public Material previewMaterial;
 
     SerializedObject so;
     SerializedProperty radiusP;
     SerializedProperty spawnCountP;
     SerializedProperty spawnPrefabP;
+    SerializedProperty previewMatP;
 
-    Vector2[] randomPoints;
+    RandomData[] randomPoints;
+    //List<RaycastHit> hitPts = new List<RaycastHit>();
+    List<Pose> posePts = new List<Pose>();
+    GameObject[] prefabs;
+
 
     private void OnEnable()
     {
@@ -28,6 +36,12 @@ public class PropScatterer : EditorWindow
         radiusP = so.FindProperty("radius");
         spawnCountP = so.FindProperty("spawnCount");
         spawnPrefabP = so.FindProperty("spawnPrefab");
+        previewMatP = so.FindProperty("previewMaterial");
+
+        string[] guids = AssetDatabase.FindAssets("t:prefab", new[] { "Assets/Prefabs/PropScatterer" });
+        IEnumerable<string> paths = guids.Select(AssetDatabase.GUIDToAssetPath);
+        prefabs = paths.Select(AssetDatabase.LoadAssetAtPath<GameObject>).ToArray();
+
 
         GenerateRandomPoints();
     }
@@ -46,7 +60,9 @@ public class PropScatterer : EditorWindow
         EditorGUILayout.PropertyField(spawnCountP);
         spawnCountP.intValue = spawnCountP.intValue.AtLeast(1);
 
-        EditorGUILayout.PropertyField (spawnPrefabP);
+        EditorGUILayout.PropertyField(spawnPrefabP);
+
+        EditorGUILayout.PropertyField(previewMatP);
 
         if (so.ApplyModifiedProperties())
         {
@@ -66,7 +82,33 @@ public class PropScatterer : EditorWindow
 
     void DuringSceneGUI(SceneView sceneView)
     {
+        if (prefabs == null && prefabs.Length == 0) return;
 
+
+        Handles.BeginGUI();
+
+        Rect rect = new Rect(8, 8, 50, 50);
+
+        foreach (GameObject prefab in prefabs)
+        {
+            Texture icon = AssetPreview.GetAssetPreview(prefab);
+
+            //if (GUI.Button(rect, new GUIContent(prefab.name, icon)))
+            //{
+            //    spawnPrefab = prefab;
+            //}
+
+            if (GUI.Toggle(rect, spawnPrefab == prefab, new GUIContent(icon)))
+            {
+                spawnPrefab = prefab;
+            }
+
+            rect.y += rect.height + 2;
+        }
+
+        Handles.EndGUI();
+
+        if (spawnPrefab == null) return;
 
         Handles.zTest = UnityEngine.Rendering.CompareFunction.LessEqual;
 
@@ -95,6 +137,11 @@ public class PropScatterer : EditorWindow
             Event.current.Use();
         }
 
+        if (Event.current.keyCode == KeyCode.Space && Event.current.type == EventType.KeyDown)
+        {
+            TrySpawnObjects();
+        }
+
         Ray ray = HandleUtility.GUIPointToWorldRay(Event.current.mousePosition);
 
         if (Physics.Raycast(ray, out RaycastHit hit))
@@ -110,7 +157,7 @@ public class PropScatterer : EditorWindow
             Ray GetTangentRay(Vector2 tangentSpacePos)
             {
                 Vector3 rayOrigin = hit.point + (hitTangent * tangentSpacePos.x + hitBitangent * tangentSpacePos.y) * radius;
-                rayOrigin += hitNormal * 2;
+                rayOrigin += hitNormal * 5;
                 Vector3 rayDirection = -hit.normal;
 
                 return new Ray(rayOrigin, rayDirection);
@@ -124,7 +171,7 @@ public class PropScatterer : EditorWindow
                 float angRad = t * DUEPI;
                 Vector2 dir = new Vector2(Mathf.Cos(angRad), Mathf.Sin(angRad));
                 Ray r = GetTangentRay(dir);
-                
+
 
                 if (Physics.Raycast(r, out RaycastHit cHit))
                 {
@@ -141,8 +188,6 @@ public class PropScatterer : EditorWindow
 
             //Handles.DrawWireDisc(hit.point, hit.normal, radius);
 
-
-
             Handles.color = Color.red;
             Handles.DrawAAPolyLine(6, hit.point, hit.point + hitTangent);
             Handles.color = Color.green;
@@ -150,19 +195,46 @@ public class PropScatterer : EditorWindow
             Handles.color = Color.blue;
             Handles.DrawAAPolyLine(6, hit.point, hit.point + hitNormal);
 
+            Handles.color = Color.white;
 
-
-            foreach (Vector2 p in randomPoints)
+            posePts.Clear();
+            foreach (RandomData rndDataPoint in randomPoints)
             {
-
-                Ray ptRay = GetTangentRay(p);
+                Ray ptRay = GetTangentRay(rndDataPoint.pointInDisc);
 
                 if (Physics.Raycast(ptRay, out RaycastHit ptHit))
                 {
-                    DrawPoint(ptHit.point);
-                    Handles.DrawAAPolyLine(ptHit.point, ptHit.point + ptHit.normal);
-                }
+                    Quaternion randomRot = Quaternion.Euler(0f, 0f, rndDataPoint.randAngle);
+                    Quaternion rot =
+                        Quaternion.LookRotation(ptHit.normal) * (randomRot * Quaternion.Euler(90f, 0f, 0f));
 
+                    Pose pose = new Pose(ptHit.point, rot);
+
+                    //Mesh mesh = spawnPrefab.GetComponent<MeshFilter>().sharedMesh;
+                    //previewMaterial.SetPass(0);
+
+                    //Graphics.DrawMeshNow
+                    //    (mesh, Matrix4x4.TRS(pose.position, pose.rotation, Vector3.one));
+
+                    Matrix4x4 poseToWorldMtx = Matrix4x4.TRS(pose.position, pose.rotation, Vector3.one);
+                    MeshFilter[] filters = spawnPrefab.GetComponentsInChildren<MeshFilter>();
+
+                    foreach (MeshFilter filter in filters)
+                    {
+                        Matrix4x4 childToPose = filter.transform.localToWorldMatrix;
+                        Matrix4x4 childToWorldMtx = poseToWorldMtx * childToPose;
+
+                        Mesh mesh = filter.sharedMesh;
+                        Material mat = filter.GetComponent<MeshRenderer>().sharedMaterial;
+                        mat.SetPass(0);
+                        Graphics.DrawMeshNow(mesh, childToWorldMtx);
+                    }
+
+
+                    DrawPoint(ptHit.point);
+                    posePts.Add(pose);
+                    //Handles.DrawAAPolyLine(ptHit.point, ptHit.point + ptHit.normal);
+                }
             }
         }
 
@@ -170,11 +242,11 @@ public class PropScatterer : EditorWindow
 
     void GenerateRandomPoints()
     {
-        randomPoints = new Vector2[spawnCount];
+        randomPoints = new RandomData[spawnCount];
 
         for (int i = 0; i < spawnCount; i++)
         {
-            randomPoints[i] = Random.insideUnitCircle;
+            randomPoints[i].SetRandomValues();
         }
     }
 
@@ -183,5 +255,32 @@ public class PropScatterer : EditorWindow
         Handles.SphereHandleCap(-1, pos, Quaternion.identity, 0.1f, EventType.Repaint);
     }
 
+    void TrySpawnObjects()
+    {
+        if (spawnPrefab == null) return;
 
+        foreach (Pose pose in posePts)
+        {
+
+
+            GameObject thingToSpawn = (GameObject)PrefabUtility.InstantiatePrefab(spawnPrefab);
+            Undo.RegisterCreatedObjectUndo(thingToSpawn, "Object Spawn");
+            thingToSpawn.transform.SetPositionAndRotation(pose.position, pose.rotation);
+        }
+
+        GenerateRandomPoints();
+    }
+}
+
+
+public struct RandomData
+{
+    public Vector2 pointInDisc;
+    public float randAngle;
+
+    public void SetRandomValues()
+    {
+        pointInDisc = Random.insideUnitCircle;
+        randAngle = Random.value * 360;
+    }
 }
